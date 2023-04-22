@@ -1,12 +1,10 @@
 /***************************************************************
- Copyright © ALIENTEK Co., Ltd. 1998-2021. All rights reserved.
- 文件名 : v4l2_camera.c
- 作者 : 邓涛
+ 文件名 : scaling_image.c
+ 作者 : Herc
  版本 : V1.0
- 描述 : V4L2摄像头应用编程实战
+ 描述 : V4L2获取摄像头数据显示到LCD
  其他 : 无
- 论坛 : www.openedv.com
- 日志 : 初版 V1.0 2021/7/09 邓涛创建
+ 日志 : 初版 V1.0 2023/4/21 创建
  ***************************************************************/
 
 #include <stdio.h>
@@ -182,45 +180,6 @@ static void v4l2_print_formats(void)
     }
 }
 
-
-static void yuyv_to_rgb565(unsigned char *yuyvdata, unsigned char *rgbdata, int w, int h)
-{
-    int i;
-    int r1, g1, b1;
-    
-    // int r2, g2, b2;
-    // printf("yuyv_to_rgb565:   loop time = %d \n", w * h / 2);
-    for (i = 0; i < w * h; i++)
-    {
-        // printf("*************%s %d \r\n", __FUNCTION__, __LINE__);
-        unsigned char data[4];
-        memcpy((unsigned char*)data, (unsigned char*)(yuyvdata + i * 4), 4);
-        // printf("data:%x, yuyvdata: %x\r\n", *(short*)data, yuyvdata[i * 4]);
-        // Y0 U0 Y1 V1-->[Y0 U0 V1] [Y1 U0 v1]
-        unsigned char Y0 = data[0];
-        unsigned char U0 = data[1];
-        unsigned char Y1 = data[2];
-        unsigned char V1 = data[3];
-        // printf("Y0=%x, U0=%x, Y1==%x, V1=%x\r\n", Y0, U0, Y1, V1);
-
-        r1 = Y0 + 1.4075 * (V1-128); if(r1>255)r1=255; if(r1<0)r1=0;
-	    g1 =Y0 - 0.3455 * (U0-128) - 0.7169 * (V1-128); if(g1>255)g1=255; if(g1<0)g1=0;
-        b1 = Y0 + 1.779 *(U0-128); if(b1>255)b1=255; if(b1<0)b1=0;
-
-	    // r2 = Y1+1.4075* (V1-128) ;if(r2>255)r2=255; if(r2<0)r2=0;
-	    // g2 = Y1- 0.3455 *(U0-128) - 0.7169*(V1-128); if(g2>255)g2=255;if(g2<0)g2=0;
-        // b2 = Y1+ 1.779 * (U0-128);if(b2>255)b2=255;if(b2<0)b2=0;
-
-        // rgbdata[i * 2 + 0] = ((r1&0x1F) << 3) | ((g1&0xE0) >> 5);
-        // rgbdata[i * 2 + 1] = ((g1&0x07) << 5) | (b1&0x1F);
-        // rgbdata[i] = rgbIII_to_bgr565(r1,g1,b1);
-        
-        *(rgbdata++) = (((g1 & 0x1c) << 3) | (b1 >> 3));/* g低5位，b高5位 */
-        *(rgbdata++) = ((r1 & 0xf8) | (g1 >> 5));	    /* r高5位，g高3位 */
-
-    }
-}
-
 /*
 * YUV422打包数据,UYVY,转换为RGB565,
 * inBuf -- YUV data
@@ -297,8 +256,6 @@ int convert_uyvy_to_rgb565(unsigned char *inBuf, unsigned char *outBuf, int imgW
 
 	return 0;
 }
-
-
 
 static int v4l2_set_format(void)
 {
@@ -407,27 +364,56 @@ static int v4l2_stream_on(void)
     return 0;
 }
 
-/*
- * @func    :scale_image
- * @desp    :对图像进行缩放
-*/
-static void scale_image(unsigned short* Buf, int src_width, int src_height, int scale_width, int scale_height)
-{
-    int i, j;
-    double scale_n = (scale_width * scale_height)/(src_width * scale_height);
-    for(i=0; i<src_height*scale_n; i++){
-        for(j=0; j<src_width*scale_n; j++){
-            if(i<scale_width && j<scale_height){
-                Buf[i*scale_height+j] = Buf[src_width*(src_height-1-(int)(i/scale_n))+(int)(j/scale_n)];
-            }
+/**
+ * @brief Scale an RGB565 image.
+ *
+ * @param src_buf       Pointer to the source RGB565 image buffer.
+ * @param src_width     Width of the source image.
+ * @param src_height    Height of the source image.
+ * @param scale_buf     Pointer to the scaled RGB565 image buffer.
+ * @param scale_width   Width of the scaled image.
+ * @param scale_height  Height of the scaled image.
+ *
+ * @note The scaled image will be stored in the 'scale_buf' buffer.
+ */
+static void scale_image_RGB565(unsigned char* src_buf, int src_width, int src_height, unsigned char* scale_buf, int scale_width, int scale_height) {
+    // Allocate memory for temporary buffer
+    int x,y;
+    int temp_size = src_width * scale_height * 2;
+    unsigned char* temp_buf = (unsigned char*)malloc(temp_size);
+    if (temp_buf == NULL) {
+        printf("Error: failed to allocate memory for temporary buffer\n");
+        return;
+    }
+    memset(temp_buf, 0, temp_size);
+
+    // Compute scaling factors
+    float x_ratio = (float)src_width / (float)scale_width;
+    float y_ratio = (float)src_height / (float)scale_height;
+
+    // Loop through each pixel in scaled image and find corresponding pixel in source image
+    for (y = 0; y < scale_height; y++) {
+        for (x = 0; x < scale_width; x++) {
+            int px = (int)(x * x_ratio);
+            int py = (int)(y * y_ratio);
+            int src_index = (py * src_width + px) * 2;
+            int dst_index = (y * scale_width + x) * 2;
+            memcpy(&temp_buf[dst_index], &src_buf[src_index], 2);
         }
     }
+
+    // Copy temporary buffer to output buffer
+    memcpy(scale_buf, temp_buf, scale_width * scale_height * 2);
+
+    // Free memory
+    free(temp_buf);
 }
 
 static void v4l2_read_data(void)
 {
     struct v4l2_buffer buf = {0};
     unsigned short rgbdata[480 * 272];
+    unsigned short scaledata[480 * 272];
     unsigned short *base;
     unsigned short *start;
     int min_w, min_h;
@@ -456,18 +442,26 @@ static void v4l2_read_data(void)
 
             ioctl(v4l2_fd, VIDIOC_DQBUF, &buf);     //出队
             //视频格式转换
-            // yuyv_to_rgb565((unsigned char *)(buf_infos[buf.index].start), \
-                             (unsigned char *)(rgbdata), frm_width, frm_height); 
             convert_uyvy_to_rgb565((unsigned char *)(buf_infos[buf.index].start), \
                                     (unsigned char *)(rgbdata), frm_width, frm_height);
-            
+            //定义缩放后图像的尺寸
+            int scale_width  = width*0.5;
+            int scale_height = height*0.5;
+            // printf("%s: frm_width=%d, frm_height=%d, scale_width=%d, scale_height=%d\n", __FUNCTION__, frm_width, frm_height, scale_width, scale_height);
+            scale_image_RGB565((unsigned char*)rgbdata, frm_width, frm_height, (unsigned char*)scaledata, scale_width, scale_height);
             //循环min_h次有问题，如果只是要显示摄像头的数据，只刷新摄像头数据高度即可。
             for (j = 0, base=screen_base, start=buf_infos[buf.index].start, rgbdataIdx = 0;
-                        j < min_h; j++) {
+                        j < scale_height; j++) {
             
-                memcpy((unsigned char*)base, (unsigned char*)(&rgbdata[rgbdataIdx]), frm_width*2);
+                /* 对摄像头数据进行缩放处理 */
+                memcpy((unsigned char*)base, (unsigned char*)(&scaledata[rgbdataIdx]), scale_width*2);
                 base += width;  //LCD显示指向下一行
-                rgbdataIdx += frm_width;//指向下一行数据
+                rgbdataIdx += scale_width;//指向下一行数据
+
+                /* 将摄像头未缩放数据放到lcd */
+                // memcpy((unsigned char*)base, (unsigned char*)(&rgbdata[rgbdataIdx]), frm_width*2);
+                // base += width;  //LCD显示指向下一行
+                // rgbdataIdx += frm_width;//指向下一行数据
 
             }
             // 数据处理完之后、再入队、往复
