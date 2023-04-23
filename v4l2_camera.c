@@ -7,6 +7,7 @@
  日志 : 初版 V1.0 2023/4/21 创建
  ***************************************************************/
 
+#include "v4l2_camera.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -40,76 +41,72 @@
  })
 
 #define FB_DEV              "/dev/fb0"      //LCD设备节点
-#define FRAMEBUFFER_COUNT   3               //帧缓冲数量
 
-/*** 摄像头像素格式及其描述信息 ***/
-typedef struct camera_format {
-    unsigned char description[32];  //字符串描述信息
-    unsigned int pixelformat;       //像素格式
-} cam_fmt;
-
-/*** 描述一个帧缓冲的信息 ***/
-typedef struct cam_buf_info {
-    unsigned short *start;      //帧缓冲起始地址
-    unsigned long length;       //帧缓冲长度
-} cam_buf_info;
-
-static int width;                       //LCD宽度
-static int height;                      //LCD高度
+static int lcd_width;                       //LCD宽度
+static int lcd_height;                      //LCD高度
 static unsigned short *screen_base = NULL;//LCD显存基地址
 static int fb_fd = -1;                  //LCD设备文件描述符
-static int v4l2_fd = -1;                //摄像头设备文件描述符
-static cam_buf_info buf_infos[FRAMEBUFFER_COUNT];
-static cam_fmt cam_fmts[10];
-static int frm_width, frm_height;   //视频帧宽度和高度
 
-static int fb_dev_init()
+static int fb_dev_init(camera_parameter *camera_param)
 {
-    struct fb_var_screeninfo fb_var = {0};
-    struct fb_fix_screeninfo fb_fix = {0};
-    unsigned long screen_size;
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
 
-    /* 打开framebuffer设备 */
-    fb_fd = open(FB_DEV, O_RDWR);
-    if (0 > fb_fd) {
-        fprintf(stderr, "open error: %s: %s\n", FB_DEV, strerror(errno));
-        return -1;
+    if(camera_param->screen_index == 0){
+        struct fb_var_screeninfo fb_var = {0};
+        struct fb_fix_screeninfo fb_fix = {0};
+        unsigned long screen_size;
+
+        /* 打开framebuffer设备 */
+        fb_fd = open(FB_DEV, O_RDWR);
+        if (0 > fb_fd) {
+            fprintf(stderr, "open error: %s: %s\n", FB_DEV, strerror(errno));
+            return -1;
+        }
+
+        /* 获取framebuffer设备信息 */
+        ioctl(fb_fd, FBIOGET_VSCREENINFO, &fb_var);
+        ioctl(fb_fd, FBIOGET_FSCREENINFO, &fb_fix);
+
+        screen_size = fb_fix.line_length * fb_var.yres;
+        lcd_width = fb_var.xres;
+        lcd_height = fb_var.yres;
+        // printf("screen_size:%lu   fb_var  width=%d,    height=%d   line_length=%d \r\n", screen_size, width, height, fb_fix.line_length);
+
+        /* 内存映射 */
+        screen_base = mmap(NULL, screen_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb_fd, 0);
+        if (MAP_FAILED == (void *)screen_base) {
+            perror("mmap error 1");
+            close(fb_fd);
+            return -1;
+        }
+
+        // printf("fb_fd=%d, screen_base=%x\n", fb_fd, screen_base);
+        /* LCD背景刷白 */
+        memset(screen_base, 0xFF, screen_size);
     }
-
-    /* 获取framebuffer设备信息 */
-    ioctl(fb_fd, FBIOGET_VSCREENINFO, &fb_var);
-    ioctl(fb_fd, FBIOGET_FSCREENINFO, &fb_fix);
-
-    screen_size = fb_fix.line_length * fb_var.yres;
-    width = fb_var.xres;
-    height = fb_var.yres;
-    // screen_size = fb_fix.line_length * height;
-    //line_length:1600   表示一行占用的空间，已知一行像素点数为800，即每个点占2字节
-    printf("screen_size:%lu   fb_var  width=%d,    height=%d   line_length=%d \r\n", screen_size, width, height, fb_fix.line_length);
-
-    /* 内存映射 */
-    screen_base = mmap(NULL, screen_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb_fd, 0);
-    if (MAP_FAILED == (void *)screen_base) {
-        perror("mmap error 1");
-        close(fb_fd);
-        return -1;
-    }
-
-    /* LCD背景刷白 */
-    memset(screen_base, 0xFE, screen_size);
     return 0;
 }
 
-static int v4l2_dev_init(const char *device)
+static int v4l2_dev_init(camera_parameter *camera_param)
 {
     struct v4l2_capability cap = {0};
+    const char *device = camera_param->path;
+    int v4l2_fd;
+
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
 
     /* 打开摄像头 */
-    v4l2_fd = open(device, O_RDWR);
+    camera_param->v4l2_fd = open(device, O_RDWR);
+    v4l2_fd = camera_param->v4l2_fd;
     if (0 > v4l2_fd) {
         fprintf(stderr, "open error: %s: %s\n", device, strerror(errno));
         return -1;
     }
+    printf("%s: device=%s, v4l2_fd=%d\n", __FUNCTION__, device, v4l2_fd);
 
     /* 查询设备功能 */
     ioctl(v4l2_fd, VIDIOC_QUERYCAP, &cap);
@@ -124,9 +121,15 @@ static int v4l2_dev_init(const char *device)
     return 0;
 }
 
-static void v4l2_enum_formats(void)
+static void v4l2_enum_formats(camera_parameter *camera_param)
 {
     struct v4l2_fmtdesc fmtdesc = {0};
+    int v4l2_fd = camera_param->v4l2_fd;
+    cam_fmt *cam_fmts = camera_param->cam_fmts;
+
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
 
     /* 枚举摄像头所支持的所有像素格式以及描述信息 */
     fmtdesc.index = 0;
@@ -140,11 +143,17 @@ static void v4l2_enum_formats(void)
     }
 }
 
-static void v4l2_print_formats(void)
+static void v4l2_print_formats(camera_parameter *camera_param)
 {
     struct v4l2_frmsizeenum frmsize = {0};
     struct v4l2_frmivalenum frmival = {0};
+    int v4l2_fd = camera_param->v4l2_fd;
+    cam_fmt *cam_fmts = camera_param->cam_fmts;
     int i;
+
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
 
     frmsize.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     frmival.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -257,19 +266,31 @@ int convert_uyvy_to_rgb565(unsigned char *inBuf, unsigned char *outBuf, int imgW
 	return 0;
 }
 
-static int v4l2_set_format(void)
+static int v4l2_set_format(camera_parameter *camera_param)
 {
     int err = 0;
     struct v4l2_format fmt = {0};
     struct v4l2_streamparm streamparm = {0};
+    int v4l2_fd = camera_param->v4l2_fd;
+
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
 
     /* 设置帧格式 */
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;//type类型
-    fmt.fmt.pix.width = width;  //视频帧宽度
-    fmt.fmt.pix.height = height;//视频帧高度
+    fmt.fmt.pix.width = lcd_width/4;  //期待的视频帧宽度
+    fmt.fmt.pix.height = lcd_height/4;//期待的视频帧高度
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;  //像素格式
+    printf("set before 视频帧大小<%d * %d>\n", fmt.fmt.pix.width, fmt.fmt.pix.height);
     if (0 > ioctl(v4l2_fd, VIDIOC_S_FMT, &fmt)) {
         fprintf(stderr, "ioctl error: VIDIOC_S_FMT: %s\n", strerror(errno));
+        return -1;
+    }
+
+    //设置完视频帧格式后，需要获取一次，因为期待的和实际配置的参数可能不一致。
+    if (0 > ioctl(v4l2_fd, VIDIOC_G_FMT, &fmt)) {
+        fprintf(stderr, "ioctl error: VIDIOC_G_FMT: %s\n", strerror(errno));
         return -1;
     }
 
@@ -280,9 +301,9 @@ static int v4l2_set_format(void)
         return -1;
     }
 
-    frm_width = fmt.fmt.pix.width;  //获取实际的帧宽度
-    frm_height = fmt.fmt.pix.height;//获取实际的帧高度
-    printf("视频帧大小<%d * %d>\n", frm_width, frm_height);
+    camera_param->frm_width = fmt.fmt.pix.width;  //获取实际的帧宽度
+    camera_param->frm_height = fmt.fmt.pix.height;//获取实际的帧高度
+    printf("set after 视频帧大小<%d * %d>\n", camera_param->frm_width, camera_param->frm_height);
 
     /* 获取streamparm */
     streamparm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -308,10 +329,16 @@ static int v4l2_set_format(void)
     return err;
 }
 
-static int v4l2_init_buffer(void)
+static int v4l2_init_buffer(camera_parameter *camera_param)
 {
     struct v4l2_requestbuffers reqbuf = {0};
     struct v4l2_buffer buf = {0};
+    int v4l2_fd = camera_param->v4l2_fd;
+    cam_buf_info *buf_infos = camera_param->buf_infos;
+
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
 
     /* 申请帧缓冲 */
     reqbuf.count = FRAMEBUFFER_COUNT;       //帧缓冲的数量
@@ -329,7 +356,7 @@ static int v4l2_init_buffer(void)
 
         ioctl(v4l2_fd, VIDIOC_QUERYBUF, &buf);
         buf_infos[buf.index].length = buf.length;
-        printf("v4l2_init_buffer:  buf_infos[%d].length = %d\r\n", buf.index, buf_infos[buf.index].length);
+        // printf("v4l2_init_buffer:  buf_infos[%d].length = %d\r\n", buf.index, buf_infos[buf.index].length);
         buf_infos[buf.index].start = mmap(NULL, buf.length,
                 PROT_READ | PROT_WRITE, MAP_SHARED,
                 v4l2_fd, buf.m.offset);
@@ -341,7 +368,6 @@ static int v4l2_init_buffer(void)
 
     /* 入队 */
     for (buf.index = 0; buf.index < FRAMEBUFFER_COUNT; buf.index++) {
-
         if (0 > ioctl(v4l2_fd, VIDIOC_QBUF, &buf)) {
             fprintf(stderr, "ioctl error: VIDIOC_QBUF: %s\n", strerror(errno));
             return -1;
@@ -351,10 +377,15 @@ static int v4l2_init_buffer(void)
     return 0;
 }
 
-static int v4l2_stream_on(void)
+static int v4l2_stream_on(camera_parameter *camera_param)
 {
     /* 打开摄像头、摄像头开始采集数据 */
     enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    int v4l2_fd = camera_param->v4l2_fd;
+
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
 
     if (0 > ioctl(v4l2_fd, VIDIOC_STREAMON, &type)) {
         fprintf(stderr, "ioctl error: VIDIOC_STREAMON: %s\n", strerror(errno));
@@ -379,13 +410,12 @@ static int v4l2_stream_on(void)
 static void scale_image_RGB565(unsigned char* src_buf, int src_width, int src_height, unsigned char* scale_buf, int scale_width, int scale_height) {
     // Allocate memory for temporary buffer
     int x,y;
-    int temp_size = src_width * scale_height * 2;
-    unsigned char* temp_buf = (unsigned char*)malloc(temp_size);
+    unsigned char* temp_buf = (unsigned char*)malloc(scale_width * scale_height * 2);
     if (temp_buf == NULL) {
         printf("Error: failed to allocate memory for temporary buffer\n");
         return;
     }
-    memset(temp_buf, 0, temp_size);
+    memset(temp_buf, 0, scale_width * scale_height * 2);
 
     // Compute scaling factors
     float x_ratio = (float)src_width / (float)scale_width;
@@ -405,104 +435,178 @@ static void scale_image_RGB565(unsigned char* src_buf, int src_width, int src_he
     // Copy temporary buffer to output buffer
     memcpy(scale_buf, temp_buf, scale_width * scale_height * 2);
 
+    #ifdef _DEBUG_
+        printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+    #endif
     // Free memory
     free(temp_buf);
 }
 
-static void v4l2_read_data(void)
+/**
+ * @brief lcd update func
+ *
+ * @param baseAddr      
+ * @param lcdWidth      
+ * @param lcdHeight     
+ * @param startX        
+ * @param startY        
+ * @param updateWidth   
+ * @param updateHeight  
+ *
+ * @note The scaled image will be stored in the 'scale_buf' buffer.
+ */
+void updateLCD(unsigned short * baseAddr, int lcdWidth, int lcdHeight, int startX, int startY, unsigned short *baseAddrBuf,int updateWidth, int updateHeight) {
+    // 根据起始地址计算偏移量
+    unsigned short *base;
+    int j, bufIndex;
+
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
+
+    if(lcdHeight < startY+updateHeight)
+        perror("lcd update hight param err");
+    if(lcdWidth < startX+updateWidth)
+        perror("lcd update width param err");
+    
+
+    //循环min_h次有问题，如果只是要显示摄像头的数据，只刷新摄像头数据高度即可。
+    for (j = 0, base=(baseAddr+startY*lcdWidth+startX), bufIndex = 0;j < updateHeight; j++) {
+    
+        memcpy((unsigned char*)base, (unsigned char*)(&baseAddrBuf[bufIndex]), updateWidth*2);
+        base += lcd_width;  //LCD显示指向下一行
+        bufIndex += updateWidth;//指向下一行数据
+    }
+}
+
+static void v4l2_read_data(camera_parameter *camera_param)
 {
+    int v4l2_fd = camera_param->v4l2_fd;
+    SCREEN_INDEX screen_index = camera_param->screen_index;
+    cam_buf_info *buf_infos = camera_param->buf_infos;
+    int frm_width = camera_param->frm_width;
+    int frm_height = camera_param->frm_height;
     struct v4l2_buffer buf = {0};
     unsigned short rgbdata[480 * 272];
     unsigned short scaledata[480 * 272];
     unsigned short *base;
     unsigned short *start;
+    int startX, startY;//显示到lcd上的起始位置（左上角）
     int min_w, min_h;
     int j;
     int rgbdataIdx = 0;
 
-    if (width > frm_width)      //如果LCD的宽度大于视频帧宽度
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
+
+    //根据传入参数screen_index来设置显示到lcd上的位置。目前将lcd一分为4.
+    switch(screen_index){
+        case SCREEN_INDEX_LeftTop       : startX = 0;           startY = 0;             break;
+        case SCREEN_INDEX_RightTop      : startX = lcd_width/2; startY = 0;             break;
+        case SCREEN_INDEX_LeftBottom    : startX = 0;           startY = lcd_height/2;  break;
+        case SCREEN_INDEX_RightBottom   : startX = lcd_width/2; startY = lcd_height/2;  break;
+        default : perror("err param for screen_index");break;
+    }
+
+    if (lcd_width > frm_width)      //如果LCD的宽度大于视频帧宽度
         min_w = frm_width;      //取最小的
     else
-        min_w = width;
-    if (height > frm_height)
+        min_w = lcd_width;
+    if (lcd_height > frm_height)
         min_h = frm_height;
     else
-        min_h = height;
+        min_h = lcd_height;
 
-    printf("width=%d,   frm_width=%d\r\n", width, frm_width);
-    printf("height=%d,   frm_height=%d\r\n", height, frm_height);
-    printf("min_w=%d,   min_h=%d\r\n", min_w, min_h);
+    // printf("width=%d,   frm_width=%d\r\n", width, frm_width);
+    // printf("height=%d,   frm_height=%d\r\n", height, frm_height);
+    // printf("min_w=%d,   min_h=%d\r\n", min_w, min_h);
 
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buf.memory = V4L2_MEMORY_MMAP;
-    // printf("*************%s %d \r\n", __FUNCTION__, __LINE__);
-    for ( ; ; ) {
 
+    #ifdef _DEBUG_
+        printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+    #endif
+
+    // printf("*************%s %d \r\n", __FUNCTION_    _, __LINE__);
+    for ( ; ; ) {
         for(buf.index = 0; buf.index < FRAMEBUFFER_COUNT; buf.index++) {
+
+            #ifdef _DEBUG_
+                printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+            #endif
 
             ioctl(v4l2_fd, VIDIOC_DQBUF, &buf);     //出队
             //视频格式转换
             convert_uyvy_to_rgb565((unsigned char *)(buf_infos[buf.index].start), \
                                     (unsigned char *)(rgbdata), frm_width, frm_height);
+
+            #ifdef _DEBUG_
+                printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+            #endif
+
             //定义缩放后图像的尺寸
-            int scale_width  = width*0.5;
-            int scale_height = height*0.5;
+            int scale_width  = lcd_width*0.5;
+            int scale_height = lcd_height*0.5;
             // printf("%s: frm_width=%d, frm_height=%d, scale_width=%d, scale_height=%d\n", __FUNCTION__, frm_width, frm_height, scale_width, scale_height);
             scale_image_RGB565((unsigned char*)rgbdata, frm_width, frm_height, (unsigned char*)scaledata, scale_width, scale_height);
-            //循环min_h次有问题，如果只是要显示摄像头的数据，只刷新摄像头数据高度即可。
-            for (j = 0, base=screen_base, start=buf_infos[buf.index].start, rgbdataIdx = 0;
-                        j < scale_height; j++) {
             
-                /* 对摄像头数据进行缩放处理 */
-                memcpy((unsigned char*)base, (unsigned char*)(&scaledata[rgbdataIdx]), scale_width*2);
-                base += width;  //LCD显示指向下一行
-                rgbdataIdx += scale_width;//指向下一行数据
+            #ifdef _DEBUG_
+                printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+            #endif
 
-                /* 将摄像头未缩放数据放到lcd */
-                // memcpy((unsigned char*)base, (unsigned char*)(&rgbdata[rgbdataIdx]), frm_width*2);
-                // base += width;  //LCD显示指向下一行
-                // rgbdataIdx += frm_width;//指向下一行数据
-
-            }
+            // 更新缩放后的图像到LCD显存中
+            // printf("screen_index=%d, v4l2_fd=%d, scaledata add =%x\n", screen_index, v4l2_fd, scaledata);
+            updateLCD(screen_base, lcd_width, lcd_height, startX, startY, scaledata, scale_width, scale_height);
             // 数据处理完之后、再入队、往复
             ioctl(v4l2_fd, VIDIOC_QBUF, &buf);
+            #ifdef _DEBUG_
+                printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+            #endif
         }
     }
 }
 
-int main(int argc, char *argv[])
+void* v4l2_camera(void* arg)
 {
-    if (2 != argc) {
-        fprintf(stderr, "Usage: %s <video_dev>\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
+    #ifdef _DEBUG_
+        printf("\tdebug: %s\n", __FUNCTION__);
+    #endif
+    // if (2 != argc) {
+    //     fprintf(stderr, "Usage: %s <video_dev>\n", argv[0]);
+    //     exit(EXIT_FAILURE);
+    // }
+    camera_parameter *camera_param = (camera_parameter*)arg;
+    printf("%s param:    path=%s;   screen_index=%d\n", __FUNCTION__, camera_param->path, camera_param->screen_index);
+    
     /* 初始化LCD */
-    if (fb_dev_init())
+    if (fb_dev_init(camera_param))
         exit(EXIT_FAILURE);
 
     /* 初始化摄像头 */
-    if (v4l2_dev_init(argv[1]))
+    if (v4l2_dev_init(camera_param))
         exit(EXIT_FAILURE);
 
     /* 枚举所有格式并打印摄像头支持的分辨率及帧率 */
-    v4l2_enum_formats();
-    v4l2_print_formats();
+    v4l2_enum_formats(camera_param);
+    // v4l2_print_formats(camera_param);
 
     /* 设置格式 */
-    if (v4l2_set_format())
+    if (v4l2_set_format(camera_param))
         exit(EXIT_FAILURE);
 
     /* 初始化帧缓冲：申请、内存映射、入队 */
-    if (v4l2_init_buffer())
+    if (v4l2_init_buffer(camera_param))
         exit(EXIT_FAILURE);
 
     /* 开启视频采集 */
-    if (v4l2_stream_on())
+    if (v4l2_stream_on(camera_param))
         exit(EXIT_FAILURE);
 
     /* 读取数据：出队 */
-    v4l2_read_data();       //在函数内循环采集数据、将其显示到LCD屏
+    v4l2_read_data(camera_param);       //在函数内循环采集数据、将其显示到LCD屏
 
-    exit(EXIT_SUCCESS);
+    // exit(EXIT_SUCCESS);
+    return NULL;
 }

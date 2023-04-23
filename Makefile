@@ -1,11 +1,17 @@
 #ARCH=arm64
 CROSS=arm-linux-gnueabihf-
 #GCC=${CC}
-all: v4l2_camera
-	cp -f v4l2_camera ~/linux/nfs/rootfs-alientek/
+all: multi_camera_monitor
+	cp -f multi_camera_monitor ~/linux/nfs/rootfs-alientek/
 v4l2_camera:v4l2_camera.c
 	$(CROSS)gcc  -o v4l2_camera v4l2_camera.c 
-#	$(CROSS)strip v4l2_camera
+
+# v4l2_camera_monitor:v4l2_camera_monitor.c
+# 	$(CROSS)gcc  -o v4l2_camera v4l2_camera.c 
+
+multi_camera_monitor:
+	$(CROSS)gcc  -o multi_camera_monitor multi_camera_monitor.c v4l2_camera.c -lpthread
+
 clean:
-	@rm -vf v4l2_camera *.o *~
+	@rm -vf multi_camera_monitor *.o *~
 
