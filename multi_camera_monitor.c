@@ -11,16 +11,34 @@
 #include <pthread.h>
 #include "v4l2_camera.h"
 
-#define NUM_THREADS 4
+#define NUM_CAMERA_THREADS 4                            //打开摄像头的最大线程数量
+#define PUSH_STREAM_ADDR    "udp://192.168.124.10:1234" //推流地址
+
+/**
+ * @brief 推流线程，通过system指令来调用ffmpeg进行推流
+ *
+ * @param arg 推流udp地址
+ * @note 
+ */
+void *thread_push_stream(void *arg){
+    char cmd[200] = "ffmpeg -f fbdev -framerate 15 -i /dev/fb0 -vf 'format=yuv420p' \
+                     -c:v libx264 -preset ultrafast -tune zerolatency \
+                     -f mpegts ";
+    strcat(cmd, (char*)arg);
+    system(cmd);        //启动命令
+    return NULL;
+}
 
 int main(int argc, char *argv[])
 {
     long i;
     int ret;
-    size_t stack_size = 1024*4;    //4MB
-    camera_parameter camera_param[NUM_THREADS];
-    pthread_t threads[NUM_THREADS];
+    size_t stack_size = 1024*2;    //2MB
+    camera_parameter camera_param[NUM_CAMERA_THREADS];
+    pthread_t threads[NUM_CAMERA_THREADS];
+    pthread_t threadPushVideo;  //推流线程
     pthread_attr_t attr;
+
 
     //设置摄像头显示的参数：路径，显示到lcd上的位置
     for(i=0; i<argc-1; i++){
@@ -49,6 +67,14 @@ int main(int argc, char *argv[])
         sleep(1);// 使用互斥锁比较好
     }
 
-    pthread_exit(NULL);
+    //创建线程用于启动ffmpeg推流（udp）
+    pthread_create(&threadPushVideo, NULL, thread_push_stream, PUSH_STREAM_ADDR);
+
+    //等待线程结束，回收资源
+    for(i=0; i<argc-1; i++){
+        pthread_join(threads[i], NULL);
+    }
+    pthread_join(threadPushVideo, NULL);
+
     return 0;
 }

@@ -47,6 +47,13 @@ static int lcd_height;                      //LCD高度
 static unsigned short *screen_base = NULL;//LCD显存基地址
 static int fb_fd = -1;                  //LCD设备文件描述符
 
+/**
+ * @brief fb_dev_init - 初始化framebuffer设备，包括获取设备信息，内存映射等操作。
+ *
+ * @param camera_param - 指向包含摄像头参数的结构体的指针。
+ * @return int - 返回0表示成功，返回其他值表示失败。
+ */
+
 static int fb_dev_init(camera_parameter *camera_param)
 {
     #ifdef _DEBUG_
@@ -89,6 +96,11 @@ static int fb_dev_init(camera_parameter *camera_param)
     return 0;
 }
 
+/**
+ * @brief v4l2_dev_init - 初始化V4L2设备
+ * @param camera_param 摄像头参数结构体
+ * @return int 返回0表示初始化成功，返回-1表示初始化失败
+*/
 static int v4l2_dev_init(camera_parameter *camera_param)
 {
     struct v4l2_capability cap = {0};
@@ -121,6 +133,11 @@ static int v4l2_dev_init(camera_parameter *camera_param)
     return 0;
 }
 
+/**
+ * @brief v4l2_enum_formats - 枚举摄像头支持的像素格式及描述信息
+ * @param camera_param 存放摄像头参数的结构体指针，包括摄像头文件描述符和支持的像素格式等信息
+ * @return 无返回值
+*/
 static void v4l2_enum_formats(camera_parameter *camera_param)
 {
     struct v4l2_fmtdesc fmtdesc = {0};
@@ -143,6 +160,11 @@ static void v4l2_enum_formats(camera_parameter *camera_param)
     }
 }
 
+/**
+ * @brief v4l2_print_formats - 枚举摄像头支持的所有像素格式、分辨率和帧率，并将其打印到标准输出流中
+ * @param camera_param 指向摄像头参数结构体的指针，包含摄像头设备文件描述符和支持的像素格式数组
+ * @return 无返回值
+*/
 static void v4l2_print_formats(camera_parameter *camera_param)
 {
     struct v4l2_frmsizeenum frmsize = {0};
@@ -189,12 +211,13 @@ static void v4l2_print_formats(camera_parameter *camera_param)
     }
 }
 
-/*
-* YUV422打包数据,UYVY,转换为RGB565,
-* inBuf -- YUV data
-* outBuf -- RGB565 data
-* imgWidth,imgHeight -- image width and height
-*/
+/**
+ * @brief convert_uyvy_to_rgb565 - YUV422打包数据,UYVY转换为RGB565,
+ * @param inBuf     YUV data
+ * @param outBuf    RGB565 data
+ * @param imgWidthimgHeight      image width and height
+ * @return 0
+ */
 int convert_uyvy_to_rgb565(unsigned char *inBuf, unsigned char *outBuf, int imgWidth, int imgHeight)
 {
 	int rows ,cols;	/* 行列标志 */
@@ -266,6 +289,11 @@ int convert_uyvy_to_rgb565(unsigned char *inBuf, unsigned char *outBuf, int imgW
 	return 0;
 }
 
+/**
+ * @brief v4l2_set_format - 设置视频帧格式并获取实际的帧宽度和帧高度以及帧率
+ * @param camera_param 相机参数结构体指针，包含相机文件描述符和实际的帧宽度和帧高度
+ * @return int 返回0表示成功，返回-1表示失败
+*/
 static int v4l2_set_format(camera_parameter *camera_param)
 {
     int err = 0;
@@ -329,6 +357,11 @@ static int v4l2_set_format(camera_parameter *camera_param)
     return err;
 }
 
+/**
+ * @brief v4l2_init_buffer - 初始化V4L2缓冲区
+ * @param camera_param 指向相机参数结构体的指针
+ * @return int 返回0表示成功，返回-1表示失败
+*/
 static int v4l2_init_buffer(camera_parameter *camera_param)
 {
     struct v4l2_requestbuffers reqbuf = {0};
@@ -377,6 +410,11 @@ static int v4l2_init_buffer(camera_parameter *camera_param)
     return 0;
 }
 
+/**
+ * @brief v4l2_stream_on - 打开摄像头并开始采集数据
+ * @param camera_param 指向摄像头参数结构体的指针
+ * @return int 成功返回0，失败返回-1
+*/
 static int v4l2_stream_on(camera_parameter *camera_param)
 {
     /* 打开摄像头、摄像头开始采集数据 */
@@ -396,7 +434,7 @@ static int v4l2_stream_on(camera_parameter *camera_param)
 }
 
 /**
- * @brief Scale an RGB565 image.
+ * @brief scale_image_RGB565 - Scale an RGB565 image.
  *
  * @param src_buf       Pointer to the source RGB565 image buffer.
  * @param src_width     Width of the source image.
@@ -443,14 +481,15 @@ static void scale_image_RGB565(unsigned char* src_buf, int src_width, int src_he
 }
 
 /**
- * @brief lcd update func
+ * @brief updateLCD - LCD更新函数
  *
- * @param baseAddr      
- * @param lcdWidth      
+ * @param baseAddr      lcd基地址
+ * @param lcdWidth      lcd的屏幕的宽高
  * @param lcdHeight     
- * @param startX        
+ * @param startX        更新的lcd区域的左上角点位置
  * @param startY        
- * @param updateWidth   
+ * @param baseAddrBuf   需要写到lcd的图像基地址
+ * @param updateWidth   需要更新的宽高
  * @param updateHeight  
  *
  * @note The scaled image will be stored in the 'scale_buf' buffer.
@@ -479,6 +518,11 @@ void updateLCD(unsigned short * baseAddr, int lcdWidth, int lcdHeight, int start
     }
 }
 
+/**
+ * @brief v4l2_read_data - 读取摄像头采集的数据，将数据转换为RGB565格式并缩放到LCD屏幕大小，最后更新到LCD屏幕上。
+ * @param camera_param 摄像头参数结构体指针，包括摄像头文件描述符、采集缓冲区信息、帧宽高等参数以及显示到哪个屏幕上等信息。
+ * @return 无返回值。
+*/
 static void v4l2_read_data(camera_parameter *camera_param)
 {
     int v4l2_fd = camera_param->v4l2_fd;
@@ -568,6 +612,11 @@ static void v4l2_read_data(camera_parameter *camera_param)
     }
 }
 
+/**
+ * @brief v4l2_camera - 通过 V4L2 接口采集视频数据并显示在屏幕上
+ * @param arg 摄像头参数结构体指针
+ * @return 无返回值。
+*/
 void* v4l2_camera(void* arg)
 {
     #ifdef _DEBUG_
