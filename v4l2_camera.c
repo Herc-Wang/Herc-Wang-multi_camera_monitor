@@ -656,6 +656,7 @@ void* v4l2_camera(void* arg)
     /* 读取数据：出队 */
     v4l2_read_data(camera_param);       //在函数内循环采集数据、将其显示到LCD屏
 
+    while(1);
     // exit(EXIT_SUCCESS);
     return NULL;
 }
