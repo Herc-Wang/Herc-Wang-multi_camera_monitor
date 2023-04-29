@@ -310,7 +310,7 @@ static int v4l2_set_format(camera_parameter *camera_param)
     fmt.fmt.pix.width = lcd_width/4;  //期待的视频帧宽度
     fmt.fmt.pix.height = lcd_height/4;//期待的视频帧高度
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;  //像素格式
-    printf("set before 视频帧大小<%d * %d>\n", fmt.fmt.pix.width, fmt.fmt.pix.height);
+    // printf("set before 视频帧大小<%d * %d>\n", fmt.fmt.pix.width, fmt.fmt.pix.height);
     if (0 > ioctl(v4l2_fd, VIDIOC_S_FMT, &fmt)) {
         fprintf(stderr, "ioctl error: VIDIOC_S_FMT: %s\n", strerror(errno));
         return -1;
@@ -331,7 +331,7 @@ static int v4l2_set_format(camera_parameter *camera_param)
 
     camera_param->frm_width = fmt.fmt.pix.width;  //获取实际的帧宽度
     camera_param->frm_height = fmt.fmt.pix.height;//获取实际的帧高度
-    printf("set after 视频帧大小<%d * %d>\n", camera_param->frm_width, camera_param->frm_height);
+    // printf("set after 视频帧大小<%d * %d>\n", camera_param->frm_width, camera_param->frm_height);
 
     /* 获取streamparm */
     streamparm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -349,8 +349,8 @@ static int v4l2_set_format(camera_parameter *camera_param)
 
     err = ioctl(v4l2_fd, VIDIOC_G_PARM, &streamparm);
     if(!err){
-        printf("get VIDIOC_G_PARM success\n");
-        printf("      numerator:%d , denominator:%d\r\n", streamparm.parm.capture.timeperframe.numerator, \
+        // printf("get VIDIOC_G_PARM success\n");
+        // printf("      numerator:%d , denominator:%d\r\n", streamparm.parm.capture.timeperframe.numerator, \
                                                         streamparm.parm.capture.timeperframe.denominator);
     }
 

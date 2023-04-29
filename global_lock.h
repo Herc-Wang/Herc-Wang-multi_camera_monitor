@@ -6,7 +6,7 @@
 
 // 声明全局互斥量
 extern pthread_mutex_t mutex;
-extern pthread_cond_t usb_signal;
+extern pthread_cond_t  usb_signal;
 
 
 extern camera_data* global_camera_data;
