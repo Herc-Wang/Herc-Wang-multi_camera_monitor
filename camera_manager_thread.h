@@ -1,0 +1,6 @@
+#ifndef __CAMERA_MANAGER_THREAD_H__
+#define __CAMERA_MANAGER_THREAD_H__
+
+
+
+#endif // !__CAMERA_MANAGER_THREAD_H__

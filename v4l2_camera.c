@@ -627,7 +627,7 @@ void* v4l2_camera(void* arg)
     //     exit(EXIT_FAILURE);
     // }
     camera_parameter *camera_param = (camera_parameter*)arg;
-    printf("%s param:    path=%s;   screen_index=%d\n", __FUNCTION__, camera_param->path, camera_param->screen_index);
+    // printf("%s param:    path=%s;   screen_index=%d\n", __FUNCTION__, camera_param->path, camera_param->screen_index);
     
     /* 初始化LCD */
     if (fb_dev_init(camera_param))
@@ -659,4 +659,108 @@ void* v4l2_camera(void* arg)
     while(1);
     // exit(EXIT_SUCCESS);
     return NULL;
+}
+
+
+
+/**
+ * @brief enmu_valid_camera - 遍历可用摄像头，将信息存储到结构体pCameraParam中
+ * 
+ * @param pCameraParam 存储有效摄像头的信息
+ * @param vaildCameraCnt 返回有效的摄像头个数
+ * @return 0
+*/
+int enmu_valid_camera(camera_parameter* pCameraParam, int* vaildCameraCnt){
+    int fd;
+    int i = 0;
+    struct v4l2_format fmt = {0};
+    struct v4l2_capability caps;
+    *vaildCameraCnt = 0;    //清0
+
+    char camera_path[16];  
+    for(i=0; i<16; i++){
+        sprintf(camera_path, "/dev/video%d", i);
+        fd = open(camera_path, O_RDONLY);
+        if (fd == -1) {
+            continue;
+        }
+
+        /* 查询设备功能 */
+        if (ioctl(fd, VIDIOC_QUERYCAP, &caps) == -1) {
+            #ifdef _DEBUG_
+                perror("VIDIOC_QUERYCAP");
+            #endif
+            close(fd);
+            continue;
+        }
+
+        /* 判断是否是视频采集设备 */
+        if (!(V4L2_CAP_VIDEO_CAPTURE & caps.capabilities)) {
+            #ifdef _DEBUG_
+                fprintf(stderr, "Error: %s: No capture video device!\n", camera_path);
+            #endif
+            close(fd);
+            continue;
+        }
+
+        /* 设置帧格式 ,只有可用摄像头才可以设置帧格式*/
+        fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;//type类型
+        fmt.fmt.pix.width = 1;  //期待的视频帧宽度
+        fmt.fmt.pix.height = 1;//期待的视频帧高度
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;  //像素格式
+        // printf("set before 视频帧大小<%d * %d>\n", fmt.fmt.pix.width, fmt.fmt.pix.height);
+        if (0 > ioctl(fd, VIDIOC_S_FMT, &fmt)) {
+            #ifdef _DEBUG_
+                fprintf(stderr, "ioctl error: VIDIOC_S_FMT: %s\n", strerror(errno));
+            #endif
+            continue;
+        }
+
+        camera_parameter *pCamera = &pCameraParam[*vaildCameraCnt];
+        strcpy(pCamera->path, camera_path);
+        (*vaildCameraCnt)++;
+
+        close(fd);
+    }
+    return 0;
+}
+
+/**
+ * @brief relocation_camera_display - 设置摄像头显示的参数：路径，显示到lcd上的位置
+ * 
+ * @param pCameraParam 存储有效摄像头的信息
+ * @param vaildCameraCnt 有效的摄像头个数
+ * @return -1,没有有效摄像头；0,正常。
+*/
+int relocation_camera_display(camera_parameter* pCameraParam, int vaildCameraCnt){
+    //设置摄像头显示的参数：路径，显示到lcd上的位置
+    int i;
+    if(vaildCameraCnt == 0){
+        return -1;
+    }
+    for(i=0; i<vaildCameraCnt; i++){
+        SCREEN_INDEX screen_index;
+        switch (i) {
+            case 0:screen_index = SCREEN_INDEX_LeftTop;     break;
+            case 1:screen_index = SCREEN_INDEX_RightTop;    break;
+            case 2:screen_index = SCREEN_INDEX_LeftBottom;  break;
+            case 3:screen_index = SCREEN_INDEX_RightBottom; break;
+        }
+        pCameraParam[i].screen_index = screen_index;
+    }
+    return 0;
+}
+
+
+/**
+ * @brief init_global_camera_struct - 初始化全局摄像头结构体
+ *
+ * @param max_camera 最大摄像头数量
+ * @return 返回初始化完成的全局摄像头结构体
+ */
+camera_data* init_global_camera_struct(int max_camera){
+    camera_data* pCamera_data = (camera_data*)malloc(sizeof(camera_data));
+    pCamera_data->pCamera_private_param = (camera_parameter*)malloc(sizeof(camera_parameter)*max_camera);
+    pCamera_data->vaild_camera_num = 0;
+    return pCamera_data;
 }

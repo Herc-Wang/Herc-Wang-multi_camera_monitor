@@ -17,6 +17,7 @@ typedef struct cam_buf_info {
     unsigned long length;       //帧缓冲长度
 } cam_buf_info;
 
+//摄像头私有参数结构体
 typedef struct {
     char    path[20];
     int     screen_index;
@@ -26,6 +27,12 @@ typedef struct {
     int frm_width, frm_height;   //视频帧宽度和高度
 }camera_parameter;
 
+//全部摄像头结构体链表
+typedef struct {
+    camera_parameter *pCamera_private_param;    //存储摄像头私有参数的数组
+    int vaild_camera_num;                       //有效的摄像头数量
+}camera_data;
+
 typedef enum {
     SCREEN_INDEX_LeftTop,
     SCREEN_INDEX_RightTop,
@@ -34,5 +41,7 @@ typedef enum {
 }SCREEN_INDEX;
 
 void* v4l2_camera(void* arg);
-
+int enmu_valid_camera(camera_parameter* pCameraParam, int* vaildCameraCnt);
+int relocation_camera_display(camera_parameter* pCameraParam, int vaildCameraCnt);
+camera_data* init_global_camera_struct(int max_camera);
 #endif // !__V4L2_CAMERA_H__

@@ -1,17 +1,24 @@
-#ARCH=arm64
 CROSS=arm-linux-gnueabihf-
-#GCC=${CC}
-all: multi_camera_monitor
-	cp -f multi_camera_monitor ~/linux/nfs/rootfs-alientek/
-v4l2_camera:v4l2_camera.c
-	$(CROSS)gcc  -o v4l2_camera v4l2_camera.c 
+CC = $(CROSS)gcc
+CFLAGS =	-lpthread -lusb-1.0 -ludev \
+			-I/home/alientek/tools/libusb-1.0.26/build/include	\
+			-I/home/alientek/tools/eudev-3.2.11/build/include
 
-# v4l2_camera_monitor:v4l2_camera_monitor.c
-# 	$(CROSS)gcc  -o v4l2_camera v4l2_camera.c 
+LDFLAGS = -L/home/alientek/tools/libusb-1.0.26/build/lib \
+			-L/home/alientek/tools/eudev-3.2.11/build/lib
 
-multi_camera_monitor:
-	$(CROSS)gcc  -o multi_camera_monitor multi_camera_monitor.c v4l2_camera.c -lpthread
+
+TARGET = multi_camera_monitor
+OBJS = multi_camera_monitor.o v4l2_camera.o usb_monitor.o \
+		global_lock.o push_steam.o
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	cp -f ${TARGET} ~/linux/nfs/rootfs-alientek/
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	@rm -vf multi_camera_monitor *.o *~
+	rm -f $(OBJS) $(TARGET)
 
