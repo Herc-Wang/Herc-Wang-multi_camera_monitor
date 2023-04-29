@@ -761,6 +761,19 @@ int relocation_camera_display(camera_parameter* pCameraParam, int vaildCameraCnt
 camera_data* init_global_camera_struct(int max_camera){
     camera_data* pCamera_data = (camera_data*)malloc(sizeof(camera_data));
     pCamera_data->pCamera_private_param = (camera_parameter*)malloc(sizeof(camera_parameter)*max_camera);
+    pCamera_data->max_camera_num = max_camera;
     pCamera_data->vaild_camera_num = 0;
     return pCamera_data;
+}
+
+/**
+ * @brief deinit_global_camera_struct - 销毁全局摄像头结构体
+ *
+ * @param max_camera 最大摄像头数量
+ * @return 返回初始化完成的全局摄像头结构体
+ */
+void deinit_global_camera_struct(camera_data* pgdata){
+    free(pgdata->pCamera_private_param);
+    free(pgdata);
+    pgdata = NULL;
 }

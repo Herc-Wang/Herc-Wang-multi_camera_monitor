@@ -31,6 +31,7 @@ typedef struct {
 typedef struct {
     camera_parameter *pCamera_private_param;    //存储摄像头私有参数的数组
     int vaild_camera_num;                       //有效的摄像头数量
+    int max_camera_num;                         //最大摄像头数量
 }camera_data;
 
 typedef enum {
@@ -44,4 +45,5 @@ void* v4l2_camera(void* arg);
 int enmu_valid_camera(camera_parameter* pCameraParam, int* vaildCameraCnt);
 int relocation_camera_display(camera_parameter* pCameraParam, int vaildCameraCnt);
 camera_data* init_global_camera_struct(int max_camera);
+void deinit_global_camera_struct(camera_data* pgdata);
 #endif // !__V4L2_CAMERA_H__

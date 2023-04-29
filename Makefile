@@ -10,7 +10,7 @@ LDFLAGS = -L/home/alientek/tools/libusb-1.0.26/build/lib \
 
 TARGET = multi_camera_monitor
 OBJS = multi_camera_monitor.o v4l2_camera.o usb_monitor.o \
-		global_lock.o push_steam.o
+		global_lock.o push_steam.o camera_manager_thread.o
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
