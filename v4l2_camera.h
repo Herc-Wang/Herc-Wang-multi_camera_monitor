@@ -1,8 +1,6 @@
 #ifndef __V4L2_CAMERA_H__
 #define __V4L2_CAMERA_H__
 
-// #define _DEBUG_
-
 #define FRAMEBUFFER_COUNT   3               //帧缓冲数量
 
 /*** 摄像头像素格式及其描述信息 ***/
@@ -34,16 +32,9 @@ typedef struct {
     int max_camera_num;                         //最大摄像头数量
 }camera_data;
 
-typedef enum {
-    SCREEN_INDEX_LeftTop,
-    SCREEN_INDEX_RightTop,
-    SCREEN_INDEX_LeftBottom,
-    SCREEN_INDEX_RightBottom,
-}SCREEN_INDEX;
-
 void* v4l2_camera(void* arg);
 int enmu_valid_camera(camera_parameter* pCameraParam, int* vaildCameraCnt);
-int relocation_camera_display(camera_parameter* pCameraParam, int vaildCameraCnt);
 camera_data* init_global_camera_struct(int max_camera);
 void deinit_global_camera_struct(camera_data* pgdata);
+int relocation_camera_display(camera_parameter* pCameraParam, int vaildCameraCnt);
 #endif // !__V4L2_CAMERA_H__

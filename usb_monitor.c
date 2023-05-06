@@ -6,6 +6,7 @@
 #include <sys/select.h>
 #include <pthread.h>
 #include "usb_monitor.h"
+#include "camera_manager_thread.h"
 
 
 /**
@@ -82,6 +83,7 @@ void enumerate_usb_devices(struct udev *udev) {
 void *thread_usb_monitor(void *arg){
     // 创建一个udev对象
     struct udev *udev = udev_new();
+    int i;
 
     if (!udev) {
         // 创建失败
@@ -122,8 +124,14 @@ void *thread_usb_monitor(void *arg){
 
                 //如果有usb设备add或remove，都释放信号
                 if (strcmp(action, "add") == 0 || strcmp(action, "remove") == 0) {
+                    // printf("debug: fd=%d USB device added/remove\n", fd);       //debug
                     pthread_mutex_lock(&mutex);
-                    pthread_cond_signal(&usb_signal);
+                    // for(i=0; i<global_camera_data->vaild_camera_num; i++){
+                    //     printf("pthread_cancel: cancel camera thread[%d]\r\n", i);
+                    //     pthread_cancel(g_thread_usb_camera[i]);       //父线程主动发起取消请求
+                    // }
+                    pthread_cond_signal(&usb_cond);
+                    printf("debug: -----pthread_cond_signal-----\n");
                     pthread_mutex_unlock(&mutex);
                 }
                 // if (strcmp(action, "add") == 0) {

@@ -2,10 +2,11 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include "camera_manager_thread.h"
 #include "v4l2_camera.h"
 #include "global_lock.h"
+
+pthread_t g_thread_usb_camera[10];
 
 /**
  * @brief thread_manager_cameras - 该线程用于管理摄像头的子线程
@@ -14,8 +15,6 @@ void* thread_manager_cameras(void* arg){
     int i, ret;
     pthread_attr_t attr;
     size_t stack_size = 1024*2;    //2MB
-
-    pthread_t thread_usb_camera[global_camera_data->max_camera_num];    //摄像头线程
 
     //初始化线程属性
     pthread_attr_init(&attr);
@@ -33,7 +32,8 @@ void* thread_manager_cameras(void* arg){
 
         for(i=0; i<global_camera_data->vaild_camera_num; i++){
             printf("Creating thread %d\n", i);
-            ret = pthread_create(&thread_usb_camera[i], &attr, v4l2_camera, (void *)&(global_camera_data->pCamera_private_param[i]));
+            ret = pthread_create(&g_thread_usb_camera[i], &attr, v4l2_camera, \
+                                    (void *)&(global_camera_data->pCamera_private_param[i]));
             if(ret){
                 printf("Error creating thread , err code = %d\n", ret);
                 exit(-1); 
@@ -42,13 +42,20 @@ void* thread_manager_cameras(void* arg){
         }
         //等待usb监测信号，每次接收到信号则重新获取摄像头数据
         pthread_mutex_lock(&mutex);
-        pthread_cond_wait(&usb_signal, &mutex);
+        printf("debug:  >>>>>>pthread_cond_wait\r\n");
+        pthread_cond_wait(&usb_cond, &mutex);
+        printf("debug:  <<<<<<pthread_cond_wait satisfy\r\n");
         pthread_mutex_unlock(&mutex);
         
+        printf("vaild_camera_num = %d\r\n", global_camera_data->vaild_camera_num);
         for(i=0; i<global_camera_data->vaild_camera_num; i++){
-            // pthread_join(thread_usb_camera[i], NULL);   //正常等待线程结束，回收资源
-            printf("cancel camera thread[%d]\r\n", i);
-            pthread_cancel(thread_usb_camera[i]);       //父线程主动发起取消请求
+            printf("pthread_cancel thread[%d]\r\n", i);
+            pthread_cancel(g_thread_usb_camera[i]);       //父线程主动发起取消请求
+        }
+        
+        for(i=0; i<global_camera_data->vaild_camera_num; i++){
+            printf("pthread_join thread[%d]\r\n", i);
+            pthread_join(g_thread_usb_camera[i], NULL); 
         }
         global_camera_data->vaild_camera_num = 0;
     }

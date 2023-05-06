@@ -15,5 +15,6 @@ void *thread_push_stream(void *arg){
                      -f mpegts ";
     strcat(cmd, (char*)arg);
     system(cmd);        //启动命令
+    while(1);
     return NULL;
 }
