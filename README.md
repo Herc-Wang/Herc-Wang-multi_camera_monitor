@@ -3,6 +3,7 @@
 ## 项目简介
 >基于linux C+ffmpeg实现的多摄像头图传项目，在imx6ull平台上，实现多个摄像头视频显示到LCD屏幕，通过ffmpeg将LCD数据进行rtsp/udp推流。
 >![结构图](/IMG/结构图.png)
+>![程序流程图](/IMG/程序流程图.png)
 
 ## 目录结构
 

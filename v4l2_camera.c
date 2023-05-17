@@ -61,6 +61,7 @@ static int v4l2_dev_init(camera_parameter *camera_param)
     struct v4l2_capability cap = {0};
     const char *device = camera_param->path;
     int v4l2_fd;
+    int err = 0;
 
     #ifdef _DEBUG_
         printf("\tdebug: %s\n", __FUNCTION__);
@@ -76,7 +77,10 @@ static int v4l2_dev_init(camera_parameter *camera_param)
     printf("%s: device=%s, v4l2_fd=%d\n", __FUNCTION__, device, v4l2_fd);
 
     /* 查询设备功能 */
-    ioctl(v4l2_fd, VIDIOC_QUERYCAP, &cap);
+    err = ioctl(v4l2_fd, VIDIOC_QUERYCAP, &cap);
+    if(!err){
+        printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+    }
 
     /* 判断是否是视频采集设备 */
     if (!(V4L2_CAP_VIDEO_CAPTURE & cap.capabilities)) {
@@ -85,7 +89,7 @@ static int v4l2_dev_init(camera_parameter *camera_param)
         return -1;
     }
 
-    return 0;
+    return err;
 }
 
 /**
@@ -304,8 +308,8 @@ static int v4l2_set_format(camera_parameter *camera_param)
 
     err = ioctl(v4l2_fd, VIDIOC_G_PARM, &streamparm);
     if(!err){
-        // printf("get VIDIOC_G_PARM success\n");
-        // printf("      numerator:%d , denominator:%d\r\n", streamparm.parm.capture.timeperframe.numerator, \
+        printf("get VIDIOC_G_PARM success\n");
+        printf("      numerator:%d , denominator:%d\r\n", streamparm.parm.capture.timeperframe.numerator, \
                                                         streamparm.parm.capture.timeperframe.denominator);
     }
 
@@ -323,6 +327,7 @@ static int v4l2_init_buffer(camera_parameter *camera_param)
     struct v4l2_buffer buf = {0};
     int v4l2_fd = camera_param->v4l2_fd;
     cam_buf_info *buf_infos = camera_param->buf_infos;
+    int err = 0;
 
     #ifdef _DEBUG_
         printf("\tdebug: %s\n", __FUNCTION__);
@@ -342,7 +347,10 @@ static int v4l2_init_buffer(camera_parameter *camera_param)
     buf.memory = V4L2_MEMORY_MMAP;
     for (buf.index = 0; buf.index < FRAMEBUFFER_COUNT; buf.index++) {
 
-        ioctl(v4l2_fd, VIDIOC_QUERYBUF, &buf);
+        err = ioctl(v4l2_fd, VIDIOC_QUERYBUF, &buf);
+        if(!err){
+            printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+        }
         buf_infos[buf.index].length = buf.length;
         // printf("v4l2_init_buffer:  buf_infos[%d].length = %d\r\n", buf.index, buf_infos[buf.index].length);
         buf_infos[buf.index].start = mmap(NULL, buf.length,
@@ -453,6 +461,7 @@ static void v4l2_stream_off(camera_parameter *camera_param)
  */
 static void scale_image_RGB565(unsigned char* src_buf, int src_width, int src_height, unsigned char* scale_buf, int scale_width, int scale_height) {
     // Allocate memory for temporary buffer
+    int err = 0;
     int x,y;
     unsigned char* temp_buf = (unsigned char*)malloc(scale_width * scale_height * 2);
     if (temp_buf == NULL) {
@@ -509,6 +518,7 @@ static void v4l2_read_data(camera_parameter *camera_param)
     int j;
     int rgbdataIdx = 0;
     int lcd_width = g_LCD_fb_dev.lcd_width, lcd_height = g_LCD_fb_dev.lcd_height;
+    int err = 0;
 
     #ifdef _DEBUG_
         printf("\tdebug: %s\n", __FUNCTION__);
@@ -539,46 +549,34 @@ static void v4l2_read_data(camera_parameter *camera_param)
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buf.memory = V4L2_MEMORY_MMAP;
 
-    #ifdef _DEBUG_
-        printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
-    #endif
-
-    // printf("*************%s %d \r\n", __FUNCTION_    _, __LINE__);
     for ( ; ; ) {
         pthread_testcancel();   //手动创建取消点，必须！否则调用pthread_cancel不会退出
         for(buf.index = 0; buf.index < FRAMEBUFFER_COUNT; buf.index++) {
 
-            #ifdef _DEBUG_
-                printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
-            #endif
-
-            ioctl(v4l2_fd, VIDIOC_DQBUF, &buf);     //出队
+            err = ioctl(v4l2_fd, VIDIOC_DQBUF, &buf);     //出队
+            if(-1==err){
+                perror("VIDIOC_DQBUF");
+                // printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+            }
             //视频格式转换
             convert_uyvy_to_rgb565((unsigned char *)(buf_infos[buf.index].start), \
                                     (unsigned char *)(rgbdata), frm_width, frm_height);
-
-            #ifdef _DEBUG_
-                printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
-            #endif
 
             //定义缩放后图像的尺寸
             int scale_width  = lcd_width*0.5;
             int scale_height = lcd_height*0.5;
             // printf("%s: frm_width=%d, frm_height=%d, scale_width=%d, scale_height=%d\n", __FUNCTION__, frm_width, frm_height, scale_width, scale_height);
             scale_image_RGB565((unsigned char*)rgbdata, frm_width, frm_height, (unsigned char*)scaledata, scale_width, scale_height);
-            
-            #ifdef _DEBUG_
-                printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
-            #endif
 
             // 更新缩放后的图像到LCD显存中
             // printf("screen_index=%d, v4l2_fd=%d, scaledata add =%x\n", screen_index, v4l2_fd, scaledata);
             updateLCD(&g_LCD_fb_dev, lcd_width, lcd_height, startX, startY, scaledata, scale_width, scale_height);
             // 数据处理完之后、再入队、往复
-            ioctl(v4l2_fd, VIDIOC_QBUF, &buf);
-            #ifdef _DEBUG_
-                printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
-            #endif
+            err = ioctl(v4l2_fd, VIDIOC_QBUF, &buf);
+            if(-1==err){
+                perror("VIDIOC_QBUF");
+                // printf("\tdebug: %s line:%d\n", __FUNCTION__, __LINE__);
+            }
         }
     }
 }
@@ -661,6 +659,7 @@ int enmu_valid_camera(camera_parameter* pCameraParam, int* vaildCameraCnt){
     struct v4l2_format fmt = {0};
     struct v4l2_capability caps;
     *vaildCameraCnt = 0;    //清0
+    int err = 0;
 
     char camera_path[16];  
     for(i=0; i<16; i++){
@@ -695,9 +694,9 @@ int enmu_valid_camera(camera_parameter* pCameraParam, int* vaildCameraCnt){
         fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;  //像素格式
         // printf("set before 视频帧大小<%d * %d>\n", fmt.fmt.pix.width, fmt.fmt.pix.height);
         if (0 > ioctl(fd, VIDIOC_S_FMT, &fmt)) {
-            #ifdef _DEBUG_
+            // #ifdef _DEBUG_
                 fprintf(stderr, "ioctl error: VIDIOC_S_FMT: %s\n", strerror(errno));
-            #endif
+            // #endif
             continue;
         }
 
